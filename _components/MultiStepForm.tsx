@@ -29,83 +29,34 @@ export default function MultiStepForm() {
     }
   };
 
-  const handleGenerate = async () => {
+  const handleStreamFromAPIRoute = async () => {
     nextStep();
     setStreaming(true);
+    console.log(words);
 
-    await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "qwen/qwq-32b:free",
-        messages: [
-          {
-            role: "system",
-            content:
-              "you are a story generator. generate a 2 sentence story using the given words. only include the story. Do not include any explanation of your reasoning or process. Bold the words the user provided to you.",
-          },
-          {
-            role: "user",
-            content: words.join(", "),
-          },
-        ],
-        stream: true,
-      }),
-    })
-      .then((response) => handleStream(response))
-      .catch((error) => console.error("Failed to generate story", error));
-
-    // wait until end of stream to format markdown
     const storyElement = document?.getElementById("generated-story");
     if (storyElement) {
-      storyElement.innerHTML = await marked(storyElement.innerHTML);
+      storyElement.innerHTML = ""; // clear previous story
     }
 
-    setStreaming(false);
-  };
-
-  const handleStream = async (response: Response) => {
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Response body is not readable");
-    }
-
-    const decoder = new TextDecoder();
-    const storyElement = document?.getElementById("generated-story");
-    let buffer = "";
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        // Append new chunk to buffer
-        buffer += decoder.decode(value, { stream: true });
-        // Process complete lines from buffer
-        while (true) {
-          const lineEnd = buffer.indexOf("\n");
-          if (lineEnd === -1) break;
-          const line = buffer.slice(0, lineEnd).trim();
-          buffer = buffer.slice(lineEnd + 1);
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") break;
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices[0].delta.content;
-              if (content && storyElement) {
-                storyElement.innerHTML += content;
-              }
-            } catch (e: any) {
-              console.error("Failed to generate story", e);
-            }
-          }
-        }
+    const query = new URLSearchParams({ words: words.map(word => word.word).join(",") }).toString();
+    const eventSource = new EventSource(`/api/generateStory?${query}`);
+    eventSource.onmessage = (event) => {
+      if (event.data === "[DONE]") {
+        eventSource.close();
+        setStreaming(false);
+        return;
       }
-    } finally {
-      reader.cancel();
+
+      if (storyElement) {
+        storyElement.innerHTML += event.data;
+      }
+    }
+
+    eventSource.onerror = (error) => {
+      console.error("Failed to generate story", error);
+      setStreaming(false);
+      eventSource.close();
     }
   };
 
@@ -157,7 +108,7 @@ export default function MultiStepForm() {
               <TransitionButton onClick={prevStep} className="flex-1">
                 Back
               </TransitionButton>
-              <TransitionButton onClick={handleGenerate} className="flex-1">
+              <TransitionButton onClick={handleStreamFromAPIRoute} className="flex-1">
                 Generate
               </TransitionButton>
             </div>
