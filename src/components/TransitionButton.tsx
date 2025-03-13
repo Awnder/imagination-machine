@@ -1,11 +1,5 @@
 import React from "react";
-
-export interface ButtonProps {
-  children: React.ReactNode;
-  onClick: React.MouseEventHandler<HTMLButtonElement>;
-  className?: string;
-  props?: any;
-}
+import { ButtonProps } from "../interfaces";
 
 export default function TransitionButton({ children, onClick, className, ...props }: ButtonProps) {
   const handleTransition = async (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
